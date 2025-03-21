@@ -14,8 +14,9 @@ from pyrogram.enums import ParseMode, ChatAction
 from config import CUSTOM_CAPTION, OWNER_ID, PICS
 from plugins.autoDelete import auto_del_notification, delete_message
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from helper_func import banUser, is_userJoin, is_admin, subscribed, encode, decode, get_messages
-
+from helper_func import * #banUser, is_userJoin, is_admin, subscribed, encode, decode, get_messages
+from database.verify_db import *
+import string as rohit
 
 @Bot.on_message(filters.command('start') & filters.private & ~banUser & subscribed)
 async def start_command(client: Client, message: Message): 
@@ -25,6 +26,57 @@ async def start_command(client: Client, message: Message):
     if not await kingdb.present_user(id):
         try: await kingdb.add_user(id)
         except: pass
+    
+    SHORTLINK_URL = await db.get_shortener_url()
+    SHORTLINK_API = await db.get_shortener_api()
+    VERIFY_EXPIRE = await db.get_verified_time()
+    TUT_VID = await db.get_tut_video()
+    
+    
+    # Check if user is an admin and treat them as verified
+    if await kingdb.admin_exist(id):
+        verify_status = {
+            'is_verified': True,
+            'verify_token': None,  # Admins don't need a token
+            'verified_time': time.time(),
+            'link': ""
+        }
+    else:
+        verify_status = await get_verify_status(id)
+
+        # If TOKEN is enabled, handle verification logic
+        if SHORTLINK_URL:
+            if verify_status['is_verified'] and VERIFY_EXPIRE < (time.time() - verify_status['verified_time']):
+                await update_verify_status(id, is_verified=False)
+
+            if "verify_" in message.text:
+                _, token = message.text.split("_", 1)
+                if verify_status['verify_token'] != token:
+                    return await message.reply("Your token is invalid or expired. Try again by clicking /start.")
+                await update_verify_status(id, is_verified=True, verified_time=time.time())
+                if verify_status["link"] == "":
+                    reply_markup = None
+                return await message.reply(
+                    f"Your token has been successfully verified and is valid for {get_exp_time(VERIFY_EXPIRE)}",
+                    reply_markup=reply_markup,
+                    protect_content=False,
+                    quote=True
+                )
+
+            if not verify_status['is_verified']:
+                token = ''.join(random.choices(rohit.ascii_letters + rohit.digits, k=10))
+                await update_verify_status(id, verify_token=token, link="")
+                link = await get_shortlink(SHORTLINK_URL, SHORTLINK_API, f'https://telegram.dog/{client.username}?start=verify_{token}')
+                btn = [
+                    [InlineKeyboardButton("• ᴏᴘᴇɴ ʟɪɴᴋ •", url=link)],
+                    [InlineKeyboardButton('• ʜᴏᴡ ᴛᴏ ᴏᴘᴇɴ ʟɪɴᴋ •', url=TUT_VID)]
+                ]
+                return await message.reply(
+                    f"<b>Your token has expired. Please refresh your token to continue.\n\nToken Timeout: {get_exp_time(VERIFY_EXPIRE)}\n\nWhat is the token?\n\nThis is an ads token. Passing one ad allows you to use the bot for {get_exp_time(VERIFY_EXPIRE)}</b>",
+                    reply_markup=InlineKeyboardMarkup(btn),
+                    protect_content=False,
+                    quote=True
+                )
                 
     text = message.text        
     if len(text)>7:
@@ -187,3 +239,57 @@ async def restart_bot(client: Client, message: Message):
     # Optionally, you can add cleanup tasks here
     #subprocess.Popen([sys.executable, "main.py"])  # Adjust this if your start file is named differently
     #sys.exit()
+
+
+@Bot.on_message(filters.command('token') & filters.private & filters.user(OWNER_ID))
+async def set_shortener(client, message):
+    await message.reply_chat_action(ChatAction.TYPING)
+
+    try:
+        # Fetch shortener URL and API key from the database
+        shortener_url = await db.get_shortener_url()  # Fetch the shortener URL
+        shortener_api = await db.get_shortener_api()  # Fetch the shortener API key
+
+        if shortener_url and shortener_api:
+            # If both URL and API key are available, the shortener is considered "Enabled ✅"
+            shortener_status = "Enabled ✅"
+            mode_button = InlineKeyboardButton('Disable Shortener ❌', callback_data='disable_shortener')
+        else:
+            # If either URL or API key is missing, the shortener is "Disabled ❌"
+            shortener_status = "Disabled ❌"
+            mode_button = InlineKeyboardButton('Enable Shortener ✅', callback_data='set_shortener_details')
+
+        # Send the settings message with the toggle button and other options
+        await message.reply_photo(
+            photo=random.choice(PICS),
+            caption=(
+                f"🔗 Shortener Settings\n\n"
+                f"Shortener Status: {shortener_status}\n\n"
+                f"Use the options below to configure the shortener."
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [mode_button],
+                [InlineKeyboardButton('Set Site', callback_data='set_shortener_details')],
+                [
+                    InlineKeyboardButton('Settings ⚙️', callback_data='shortener_settings'),
+                    InlineKeyboardButton('🔄 Refresh', callback_data='set_shortener')
+                ],
+                [
+                    InlineKeyboardButton('Set Verified Time ⏱', callback_data='set_verify_time'),
+                    InlineKeyboardButton('Set Tutorial Video 🎥', callback_data='set_tut_video')
+                ],
+                [InlineKeyboardButton('Close ✖️', callback_data='close')]
+            ])
+        )
+    except Exception as e:
+        # Log the error for debugging purposes
+        #logging.error(f"Error in set_shortener command: {e}")
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Close ✖️", callback_data="close")]])
+        await message.reply(
+            (
+                f"❌ Error Occurred:\n\n"
+                f"Reason: {e}\n\n"
+                f"📩 Contact developer: [Rohit](https://t.me/rohit_1888)"
+            ),
+            reply_markup=reply_markup
+        )

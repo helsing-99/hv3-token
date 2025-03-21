@@ -3,6 +3,23 @@ import motor.motor_asyncio
 from config import DB_URI, DB_NAME
 
 class SidDataBase:
+    default_verify = {
+        'is_verified': False,
+        'verified_time': 0,
+        'verify_token': "",
+        'link': ""
+    }
+
+    def new_user(self, id):
+        return {
+            '_id': id,
+            'verify_status': {
+                'is_verified': False,
+                'verified_time': "",
+                'verify_token': "",
+                'link': ""
+            }
+        }
 
     def __init__(self, DB_URI, DB_NAME):
         self.dbclient = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
@@ -25,6 +42,15 @@ class SidDataBase:
         self.rqst_fsub_data = self.database['request_forcesub']
         self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
         self.store_reqLink_data = self.database['store_reqLink']
+    
+    async def db_verify_status(self, user_id):
+        user = await self.user_data.find_one({'_id': user_id})
+        if user:
+            return user.get('verify_status', self.default_verify)
+        return self.default_verify
+
+    async def db_update_verify_status(self, user_id, verify):
+        await self.user_data.update_one({'_id': user_id}, {'$set': {'verify_status': verify}})
     
     
     # CHANNEL BUTTON SETTINGS

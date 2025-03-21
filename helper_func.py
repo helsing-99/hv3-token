@@ -8,7 +8,9 @@ from pyrogram.enums import ChatMemberStatus
 from config import OWNER_ID
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram.errors import FloodWait
-from database.database import kingdb 
+from database.database import kingdb
+from shortzy import Shortzy
+from database.database import * 
 
 #=============================================================================================================================================================================
 # -------------------- HELPER FUNCTIONS FOR USER VERIFICATION IN DIFFERENT CASES -------------------- 
@@ -229,6 +231,32 @@ def get_readable_time(seconds: int) -> str:
             
     return True"""
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+async def get_verify_status(user_id):
+    verify = await kingdb.db_verify_status(user_id)
+    return verify
+
+async def update_verify_status(user_id, verify_token="", is_verified=False, verified_time=0, link=""):
+    current = await kingdb.db_verify_status(user_id)
+    current['verify_token'] = verify_token
+    current['is_verified'] = is_verified
+    current['verified_time'] = verified_time
+    current['link'] = link
+    await kingdb.db_update_verify_status(user_id, current)
+
+
+async def get_shortlink(url, api, link):
+    shortzy = Shortzy(api_key=api, base_site=url)
+    link = await shortzy.convert(link)
+    return link
+
+def get_exp_time(seconds):
+    periods = [('days', 86400), ('hours', 3600), ('mins', 60), ('secs', 1)]
+    result = ''
+    for period_name, period_seconds in periods:
+        if seconds >= period_seconds:
+            period_value, seconds = divmod(seconds, period_seconds)
+            result += f'{int(period_value)} {period_name}'
+    return result
 
 
 subscribed = filters.create(is_subscribed)
